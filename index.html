@@ -6,7 +6,7 @@
   <title>PDF → Editor + Evidenzia/Sottolinea + TTS</title>
 
   <!-- PDF.js (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js"></script>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <style>
     :root{
@@ -349,7 +349,7 @@ let lastViewport = null;
 
 // Use CDN worker
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.js";
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 function setStatus(msg){ statusEl.textContent = msg; }
 
@@ -453,6 +453,11 @@ btnFit.addEventListener('click', async ()=>{
   const v0 = page.getViewport({ scale: 1.0 });
   scale = clamp(wrapW / v0.width, 0.5, 3.0);
   await renderPage(currentPage);
+});
+
+  pdfInput.addEventListener('change', () => {
+  // appena selezioni un file, prova ad aprirlo subito
+  if (pdfInput.files?.[0]) btnOpenPdf.click();
 });
 
 /* ==========================
@@ -805,3 +810,4 @@ btnSpeakContinue.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
