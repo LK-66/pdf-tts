@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF → Editor + Evidenzia/Sottolinea + TTS</title>
+
+  <!-- PDF.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#0f1b33;
+      --muted:#8aa0c7;
+      --text:#e9f0ff;
+      --accent:#4ea1ff;
+      --ok:#38d39f;
+      --warn:#ffcc66;
+      --err:#ff6b6b;
+      --hl:#ffe58f;
+      --hlText:#111;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% 10%, #152a55 0%, var(--bg) 60%);
+      color:var(--text);
+      padding:18px;
+    }
+    h1{ font-size:18px; margin:0 0 12px; font-weight:700; letter-spacing:.2px;}
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:14px;
+      align-items:stretch;
+    }
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .cardHead{
+      padding:12px 12px 10px;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .btn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border-radius: 10px;
+      padding:8px 10px;
+      font-size:13px;
+      cursor:pointer;
+      transition:.15s;
+    }
+    .btn:hover{ border-color: rgba(78,161,255,.55); background: rgba(78,161,255,.12); }
+    .btn.primary{ background: rgba(78,161,255,.18); border-color: rgba(78,161,255,.55); }
+    .btn.danger{ background: rgba(255,107,107,.16); border-color: rgba(255,107,107,.45); }
+    .btn.ok{ background: rgba(56,211,159,.16); border-color: rgba(56,211,159,.45); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+    label{ font-size:12px; color: var(--muted); }
+    select, input[type="range"]{
+      accent-color: var(--accent);
+    }
+    select{
+      background: rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.14);
+      color: var(--text);
+      border-radius: 10px;
+      padding:7px 10px;
+      font-size:13px;
+    }
+
+    .split{
+      display:grid;
+      grid-template-rows: auto 1fr auto;
+      height: calc(100vh - 110px);
+      min-height: 520px;
+    }
+    .content{
+      padding:12px;
+      display:grid;
+      grid-template-rows: 1fr;
+      gap:10px;
+    }
+
+    /* PDF viewer */
+    .pdfWrap{
+      background: rgba(0,0,0,.28);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 12px;
+      padding:10px;
+      position:relative;
+      overflow:auto;
+    }
+    .pdfPage{
+      position:relative;
+      margin:0 auto;
+      width: fit-content;
+      user-select:text;
+    }
+    canvas{
+      display:block;
+      border-radius: 10px;
+      background:#0c1427;
+    }
+
+    /* --- PDF.js text layer (for accurate selection) --- */
+    .textLayer{
+      position:absolute;
+      inset:0;
+      overflow:hidden;
+      opacity:1;
+      line-height:1;
+      transform-origin: 0 0;
+      z-index:10;
+    }
+    .textLayer span{
+      position:absolute;
+      white-space:pre;
+      transform-origin: 0 0;
+      color: transparent;      /* text invisible, selection visible */
+      -webkit-text-fill-color: transparent;
+      cursor:text;
+    }
+    .textLayer ::selection{
+      background: rgba(78,161,255,.35);
+    }
+
+    /* Editor */
+    .editor{
+      background: rgba(0,0,0,.22);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 12px;
+      padding:12px;
+      min-height: 260px;
+      overflow:auto;
+    }
+    .editable{
+      outline:none;
+      min-height: 240px;
+      font-size:16px;
+      line-height:1.55;
+      letter-spacing:.2px;
+      word-wrap:break-word;
+    }
+    .toolbar{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      padding:10px 12px;
+      border-top:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.03);
+    }
+
+    /* TTS highlight (Word-like) */
+    .tts-word{
+      padding: 0 .5px;
+      border-radius: 4px;
+    }
+    .tts-word.active{
+      background: var(--hl);
+      color: var(--hlText) !important;
+      -webkit-text-fill-color: var(--hlText) !important;
+    }
+
+    .status{
+      padding:10px 12px;
+      border-top:1px solid rgba(255,255,255,.10);
+      color: var(--muted);
+      font-size:12px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .pill{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>PDF → Editor + Evidenzia/Sottolinea + TTS (stile Word)</h1>
+
+  <div class="grid">
+
+    <!-- LEFT: PDF -->
+    <section class="card split">
+      <div class="cardHead">
+        <div class="row">
+          <label>PDF:</label>
+          <input id="pdfInput" type="file" accept="application/pdf" />
+          <button class="btn primary" id="btnOpenPdf">Apri PDF</button>
+        </div>
+
+        <div class="row">
+          <label>Pagina:</label>
+          <button class="btn" id="btnPrev">◀</button>
+          <button class="btn" id="btnNext">▶</button>
+          <span class="pill"><span id="pageNum">-</span>/<span id="pageCount">-</span></span>
+
+          <button class="btn" id="btnFit">Adatta larghezza</button>
+        </div>
+
+        <div class="row">
+          <label>Zoom:</label>
+          <button class="btn" id="btnZoomOut">−</button>
+          <button class="btn" id="btnZoomIn">+</button>
+          <span class="pill" id="zoomLabel">100%</span>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="pdfWrap" id="pdfWrap">
+          <div class="pdfPage" id="pdfPage">
+            <canvas id="pdfCanvas"></canvas>
+            <div class="textLayer" id="textLayer"></div>
+          </div>
+        </div>
+
+        <div style="color:var(--muted);font-size:12px;padding:0 12px 10px;">
+          ✅ Puoi selezionare testo direttamente sul PDF: poi premi <b>“Leggi selezione”</b> nella sezione TTS (a destra).
+        </div>
+      </div>
+
+      <div class="status">
+        <div>Stato: <span class="pill" id="status">pronto</span></div>
+        <div class="pill" id="browserNote">TTS: pronto</div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Editor + TTS -->
+    <section class="card split">
+      <div class="cardHead">
+        <div class="row">
+          <button class="btn" id="btnImportPage">Importa pagina in editor</button>
+          <button class="btn" id="btnImportAll">Importa tutto</button>
+          <button class="btn danger" id="btnClearEditor">Svuota editor</button>
+        </div>
+
+        <div class="row">
+          <label>Evidenzia:</label>
+          <button class="btn" id="btnHighlight">Evidenzia</button>
+          <button class="btn" id="btnUnhighlight">Togli evidenziazione</button>
+
+          <label>Testo:</label>
+          <button class="btn" id="btnUnderline">Sottolinea</button>
+          <button class="btn" id="btnClean">Pulisci formato</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="editor">
+          <div id="editor" class="editable" contenteditable="true" spellcheck="false">
+            <div style="color:var(--muted)">Editor — qui finisce il testo importato dal PDF</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="row">
+          <label>TTS:</label>
+          <button class="btn primary" id="btnSpeakSelection">Leggi selezione</button>
+          <button class="btn" id="btnSpeakFromCursor">Leggi da cursore</button>
+          <button class="btn" id="btnSpeakContinue">Continua (selezione→fine)</button>
+
+          <button class="btn" id="btnPause">Pausa</button>
+          <button class="btn" id="btnResume">Riprendi</button>
+          <button class="btn danger" id="btnStop">Stop</button>
+        </div>
+
+        <div class="row">
+          <label>Lingua:</label>
+          <select id="lang">
+            <option value="it-IT">Italiano</option>
+            <option value="fr-FR">Français</option>
+            <option value="de-DE">Deutsch</option>
+            <option value="en-US">English</option>
+          </select>
+
+          <label>Voce:</label>
+          <select id="voice"></select>
+
+          <label>Velocità</label>
+          <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1.0"/>
+          <span class="pill" id="rateLabel">1.00</span>
+        </div>
+      </div>
+
+      <div class="status">
+        <div>Nota: su iPad l’evidenziazione parola-per-parola può diventare “a blocchi”.</div>
+        <div class="pill" id="ttsStatus">tts: idle</div>
+      </div>
+    </section>
+
+  </div>
+
+<script>
+/* ==========================
+   PDF.js setup
+========================== */
+const statusEl = document.getElementById('status');
+const pdfInput = document.getElementById('pdfInput');
+const btnOpenPdf = document.getElementById('btnOpenPdf');
+
+const pdfCanvas = document.getElementById('pdfCanvas');
+const pdfCtx = pdfCanvas.getContext('2d');
+const textLayerDiv = document.getElementById('textLayer');
+const pdfWrap = document.getElementById('pdfWrap');
+
+const pageNumEl = document.getElementById('pageNum');
+const pageCountEl = document.getElementById('pageCount');
+const zoomLabel = document.getElementById('zoomLabel');
+
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnFit = document.getElementById('btnFit');
+const btnZoomIn = document.getElementById('btnZoomIn');
+const btnZoomOut = document.getElementById('btnZoomOut');
+
+let pdfDoc = null;
+let currentPage = 1;
+let scale = 1.0;
+let lastViewport = null;
+
+// Use CDN worker
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.js";
+
+function setStatus(msg){ statusEl.textContent = msg; }
+
+async function loadPdfFromFile(file){
+  const arrayBuffer = await file.arrayBuffer();
+  return pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+}
+
+function clearTextLayer(){
+  textLayerDiv.innerHTML = "";
+}
+
+async function renderPage(num){
+  if(!pdfDoc) return;
+
+  setStatus("render pagina...");
+  const page = await pdfDoc.getPage(num);
+
+  const viewport = page.getViewport({ scale });
+  lastViewport = viewport;
+
+  // Canvas size
+  pdfCanvas.width = Math.floor(viewport.width);
+  pdfCanvas.height = Math.floor(viewport.height);
+  pdfCanvas.style.width = viewport.width + "px";
+  pdfCanvas.style.height = viewport.height + "px";
+
+  // Text layer size (match canvas exactly)
+  textLayerDiv.style.width = viewport.width + "px";
+  textLayerDiv.style.height = viewport.height + "px";
+
+  // Render canvas
+  await page.render({ canvasContext: pdfCtx, viewport }).promise;
+
+  // Render text layer (accurate selection)
+  clearTextLayer();
+  const textContent = await page.getTextContent();
+
+  // pdf.js text layer renderer
+  await pdfjsLib.renderTextLayer({
+    textContent,
+    container: textLayerDiv,
+    viewport,
+    textDivs: []
+  }).promise;
+
+  // Important: keep text layer aligned (no extra scaling)
+  textLayerDiv.style.transform = "translateZ(0)";
+
+  pageNumEl.textContent = String(currentPage);
+  pageCountEl.textContent = String(pdfDoc.numPages);
+  zoomLabel.textContent = Math.round(scale * 100) + "%";
+  setStatus("pronto");
+}
+
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+btnOpenPdf.addEventListener('click', async ()=>{
+  const file = pdfInput.files?.[0];
+  if(!file) return setStatus("seleziona un PDF");
+  try{
+    setStatus("carico PDF...");
+    pdfDoc = await loadPdfFromFile(file);
+    currentPage = 1;
+    scale = 1.0;
+    await renderPage(currentPage);
+  }catch(e){
+    console.error(e);
+    setStatus("errore PDF");
+    alert("Errore nel caricamento PDF. Prova un altro file.");
+  }
+});
+
+btnPrev.addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  currentPage = clamp(currentPage - 1, 1, pdfDoc.numPages);
+  await renderPage(currentPage);
+});
+btnNext.addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  currentPage = clamp(currentPage + 1, 1, pdfDoc.numPages);
+  await renderPage(currentPage);
+});
+
+btnZoomIn.addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  scale = clamp(scale + 0.1, 0.5, 3.0);
+  await renderPage(currentPage);
+});
+btnZoomOut.addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  scale = clamp(scale - 0.1, 0.5, 3.0);
+  await renderPage(currentPage);
+});
+
+btnFit.addEventListener('click', async ()=>{
+  if(!pdfDoc) return;
+  // Fit width to container
+  const wrapW = pdfWrap.clientWidth - 24;
+  const page = await pdfDoc.getPage(currentPage);
+  const v0 = page.getViewport({ scale: 1.0 });
+  scale = clamp(wrapW / v0.width, 0.5, 3.0);
+  await renderPage(currentPage);
+});
+
+/* ==========================
+   Import PDF text into editor
+========================== */
+const editor = document.getElementById('editor');
+const btnImportPage = document.getElementById('btnImportPage');
+const btnImportAll = document.getElementById('btnImportAll');
+const btnClearEditor = document.getElementById('btnClearEditor');
+
+async function extractPageText(pageNumber){
+  const page = await pdfDoc.getPage(pageNumber);
+  const tc = await page.getTextContent();
+  // Join with spaces where needed
+  const parts = tc.items.map(it => it.str);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+btnImportPage.addEventListener('click', async ()=>{
+  if(!pdfDoc) return alert("Prima carica un PDF");
+  const text = await extractPageText(currentPage);
+  if(!text) return alert("Nessun testo estratto (forse scansione).");
+  editor.focus();
+  document.execCommand("insertText", false, text + "\n\n");
+});
+
+btnImportAll.addEventListener('click', async ()=>{
+  if(!pdfDoc) return alert("Prima carica un PDF");
+  let all = [];
+  for(let p=1; p<=pdfDoc.numPages; p++){
+    all.push(await extractPageText(p));
+  }
+  const text = all.filter(Boolean).join("\n\n");
+  if(!text) return alert("Nessun testo estratto (forse scansione).");
+  editor.innerText = text;
+});
+
+btnClearEditor.addEventListener('click', ()=>{
+  editor.innerHTML = "";
+});
+
+/* ==========================
+   Simple formatting tools
+========================== */
+const btnHighlight = document.getElementById('btnHighlight');
+const btnUnhighlight = document.getElementById('btnUnhighlight');
+const btnUnderline = document.getElementById('btnUnderline');
+const btnClean = document.getElementById('btnClean');
+
+btnHighlight.addEventListener('click', ()=> document.execCommand('hiliteColor', false, '#ffe58f'));
+btnUnhighlight.addEventListener('click', ()=> document.execCommand('hiliteColor', false, 'transparent'));
+btnUnderline.addEventListener('click', ()=> document.execCommand('underline'));
+btnClean.addEventListener('click', ()=> document.execCommand('removeFormat'));
+
+/* ==========================
+   TTS with word highlighting
+   - Best: SpeechSynthesisUtterance.onboundary (Chrome/Edge)
+   - Fallback: chunk speaking + chunk highlight (Safari/iPad)
+========================== */
+const ttsStatus = document.getElementById('ttsStatus');
+const browserNote = document.getElementById('browserNote');
+
+const btnSpeakSelection = document.getElementById('btnSpeakSelection');
+const btnSpeakFromCursor = document.getElementById('btnSpeakFromCursor');
+const btnSpeakContinue = document.getElementById('btnSpeakContinue');
+const btnPause = document.getElementById('btnPause');
+const btnResume = document.getElementById('btnResume');
+const btnStop = document.getElementById('btnStop');
+
+const langSel = document.getElementById('lang');
+const voiceSel = document.getElementById('voice');
+const rate = document.getElementById('rate');
+const rateLabel = document.getElementById('rateLabel');
+
+rate.addEventListener('input', ()=>{
+  rateLabel.textContent = Number(rate.value).toFixed(2);
+});
+
+let voices = [];
+function refreshVoices(){
+  voices = speechSynthesis.getVoices() || [];
+  const lang = langSel.value;
+  const filtered = voices.filter(v => (v.lang || "").toLowerCase().startsWith(lang.slice(0,2).toLowerCase()));
+  const list = filtered.length ? filtered : voices;
+
+  const current = voiceSel.value;
+  voiceSel.innerHTML = "";
+  for(const v of list){
+    const opt = document.createElement("option");
+    opt.value = v.name;
+    opt.textContent = `${v.name} (${v.lang})`;
+    voiceSel.appendChild(opt);
+  }
+  if(current) voiceSel.value = current;
+}
+speechSynthesis.onvoiceschanged = refreshVoices;
+setTimeout(refreshVoices, 250);
+
+langSel.addEventListener('change', refreshVoices);
+
+function getSelectedTextFromPdfOrEditor(){
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed) return "";
+
+  // If selection is inside PDF textLayer, prefer it
+  const range = sel.getRangeAt(0);
+  const common = range.commonAncestorContainer;
+  const el = common.nodeType === 1 ? common : common.parentElement;
+  if(el && el.closest && el.closest("#textLayer")){
+    return sel.toString().trim();
+  }
+
+  // Otherwise normal selection (editor or anywhere)
+  return sel.toString().trim();
+}
+
+function getTextFromEditorFromCursorToEnd(){
+  const sel = window.getSelection();
+  if(!sel || sel.rangeCount === 0) return editor.innerText.trim();
+
+  const r = sel.getRangeAt(0);
+  // If cursor is not in editor, just read whole editor
+  const container = (r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement);
+  if(!container || !container.closest || !container.closest("#editor")) return editor.innerText.trim();
+
+  // Create range from cursor to end of editor
+  const endRange = document.createRange();
+  endRange.setStart(r.startContainer, r.startOffset);
+  endRange.setEnd(editor, editor.childNodes.length);
+  const text = endRange.toString().replace(/\s+/g, " ").trim();
+  return text;
+}
+
+/* --- Word highlight engine ---
+   We temporarily replace target text in editor with spans per word.
+   Then we move the "active" class as the speech advances.
+*/
+let originalEditorHTML = null;
+let highlightWords = [];
+let highlightActiveIndex = -1;
+
+function wrapWordsInEditorForText(targetText){
+  // Save editor HTML once per session
+  originalEditorHTML = editor.innerHTML;
+
+  // Replace editor with only the text we will speak (to ensure mapping).
+  // (Simple and robust: Word-like highlight on the spoken segment.)
+  editor.innerText = targetText;
+
+  const text = editor.innerText;
+  const words = text.match(/\S+|\s+/g) || [];
+  editor.innerHTML = words.map(tok=>{
+    if(/^\s+$/.test(tok)) return tok;
+    return `<span class="tts-word">${escapeHtml(tok)}</span>`;
+  }).join("");
+
+  highlightWords = Array.from(editor.querySelectorAll(".tts-word"));
+  highlightActiveIndex = -1;
+}
+
+function restoreEditorAfterTTS(){
+  if(originalEditorHTML != null){
+    editor.innerHTML = originalEditorHTML;
+  }
+  originalEditorHTML = null;
+  highlightWords = [];
+  highlightActiveIndex = -1;
+}
+
+function setActiveWordByCharIndex(charIndex){
+  // Approx mapping: count characters across spans
+  let count = 0;
+  for(let i=0;i<highlightWords.length;i++){
+    const w = highlightWords[i].textContent;
+    const start = count;
+    const end = count + w.length;
+    if(charIndex >= start && charIndex <= end){
+      activateWord(i);
+      return;
+    }
+    count += w.length + 1; // +1 space approx
+  }
+}
+
+function activateWord(i){
+  if(i === highlightActiveIndex) return;
+  if(highlightActiveIndex >= 0 && highlightWords[highlightActiveIndex]){
+    highlightWords[highlightActiveIndex].classList.remove("active");
+  }
+  highlightActiveIndex = i;
+  const el = highlightWords[i];
+  if(el){
+    el.classList.add("active");
+    el.scrollIntoView({ block:"nearest", inline:"nearest" });
+  }
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
+}
+
+/* --- Speaking logic --- */
+let currentUtterance = null;
+let speakingMode = "idle";
+let fallbackTimer = null;
+
+function stopTTS(){
+  speechSynthesis.cancel();
+  currentUtterance = null;
+  speakingMode = "idle";
+  ttsStatus.textContent = "tts: idle";
+  clearInterval(fallbackTimer);
+  fallbackTimer = null;
+  restoreEditorAfterTTS();
+}
+
+btnStop.addEventListener('click', stopTTS);
+btnPause.addEventListener('click', ()=> speechSynthesis.pause());
+btnResume.addEventListener('click', ()=> speechSynthesis.resume());
+
+function pickVoice(){
+  const name = voiceSel.value;
+  return (speechSynthesis.getVoices() || []).find(v => v.name === name) || null;
+}
+
+function speakWithHighlight(text){
+  if(!("speechSynthesis" in window)){
+    alert("TTS non supportato in questo browser.");
+    return;
+  }
+  if(!text) return;
+
+  stopTTS();
+
+  // Prepare highlight
+  wrapWordsInEditorForText(text);
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = langSel.value;
+  u.rate = Number(rate.value);
+  const v = pickVoice();
+  if(v) u.voice = v;
+
+  let boundarySupported = false;
+
+  u.onstart = ()=>{
+    speakingMode = "speaking";
+    ttsStatus.textContent = "tts: speaking";
+  };
+
+  // Best: real boundary
+  u.onboundary = (ev)=>{
+    // Chrome/Edge: ev.name can be "word"
+    boundarySupported = true;
+    if(typeof ev.charIndex === "number"){
+      setActiveWordByCharIndex(ev.charIndex);
+    }
+  };
+
+  u.onend = ()=>{
+    ttsStatus.textContent = "tts: done";
+    // keep highlight a moment, then restore
+    setTimeout(()=> restoreEditorAfterTTS(), 350);
+    currentUtterance = null;
+  };
+
+  u.onerror = (e)=>{
+    console.error("TTS error", e);
+    ttsStatus.textContent = "tts: error";
+    restoreEditorAfterTTS();
+  };
+
+  // Fallback (Safari/iPad): if no boundary events, fake highlight by chunks
+  // We detect later: if after ~700ms no boundary, we run chunk-highlighting.
+  setTimeout(()=>{
+    if(!boundarySupported && speakingMode === "speaking"){
+      browserNote.textContent = "TTS: evidenziazione a blocchi (Safari/iPad)";
+      runChunkHighlightFallback(text);
+    }else{
+      browserNote.textContent = "TTS: evidenziazione parola-per-parola (Chrome/Edge)";
+    }
+  }, 700);
+
+  currentUtterance = u;
+  speechSynthesis.speak(u);
+}
+
+function runChunkHighlightFallback(text){
+  // Highlight one word every ~250ms (approx), just to give a guided reading effect
+  let i = 0;
+  clearInterval(fallbackTimer);
+  fallbackTimer = setInterval(()=>{
+    if(speakingMode !== "speaking") return;
+    if(i < highlightWords.length){
+      activateWord(i);
+      i++;
+    }else{
+      clearInterval(fallbackTimer);
+      fallbackTimer = null;
+    }
+  }, 240);
+}
+
+/* --- Buttons behavior --- */
+btnSpeakSelection.addEventListener('click', ()=>{
+  // Selection can be from PDF OR editor
+  const txt = getSelectedTextFromPdfOrEditor();
+  if(!txt){
+    alert("Seleziona prima un testo (nel PDF o nell'editor).");
+    return;
+  }
+  speakWithHighlight(txt);
+});
+
+btnSpeakFromCursor.addEventListener('click', ()=>{
+  const txt = getTextFromEditorFromCursorToEnd();
+  if(!txt){
+    alert("Editor vuoto o cursore non valido.");
+    return;
+  }
+  speakWithHighlight(txt);
+});
+
+btnSpeakContinue.addEventListener('click', ()=>{
+  // If selection exists in editor, read from selection to end of editor
+  const sel = window.getSelection();
+  if(!sel || sel.rangeCount === 0){
+    const txt = editor.innerText.trim();
+    return speakWithHighlight(txt);
+  }
+  const r = sel.getRangeAt(0);
+  const container = (r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement);
+  if(!container || !container.closest || !container.closest("#editor")){
+    // if selection not in editor, fallback to editor text
+    return speakWithHighlight(editor.innerText.trim());
+  }
+  const range = document.createRange();
+  range.setStart(r.startContainer, r.startOffset);
+  range.setEnd(editor, editor.childNodes.length);
+  const txt = range.toString().replace(/\s+/g, " ").trim();
+  speakWithHighlight(txt);
+});
+
+/* Small note */
+(function(){
+  const ua = navigator.userAgent.toLowerCase();
+  const isSafari = ua.includes("safari") && !ua.includes("chrome");
+  browserNote.textContent = isSafari ? "TTS: Safari (highlight limitato)" : "TTS: Chrome/Edge consigliati";
+})();
+</script>
+</body>
+</html>
