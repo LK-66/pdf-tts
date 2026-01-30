@@ -6,7 +6,7 @@
   <title>PDF → Editor + Evidenzia/Sottolinea + TTS</title>
 
   <!-- PDF.js (CDN) -->
- <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+ <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.js"></script>
 
   <style>
     :root{
@@ -349,7 +349,7 @@ let lastViewport = null;
 
 // Use CDN worker
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.js";
 
 function setStatus(msg){ statusEl.textContent = msg; }
 
@@ -498,6 +498,11 @@ btnImportAll.addEventListener('click', async ()=>{
 btnClearEditor.addEventListener('click', ()=>{
   editor.innerHTML = "";
 });
+  
+  pdfInput.addEventListener('change', () => {
+  if (pdfInput.files?.[0]) btnOpenPdf.click();
+});
+
 
 /* ==========================
    Simple formatting tools
@@ -810,4 +815,5 @@ btnSpeakContinue.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
