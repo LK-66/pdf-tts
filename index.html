@@ -367,34 +367,40 @@ async function renderPage(num){
 
   setStatus("render pagina...");
   const page = await pdfDoc.getPage(num);
-
   const viewport = page.getViewport({ scale });
   lastViewport = viewport;
 
-  // Canvas size
-  pdfCanvas.width = Math.floor(viewport.width);
-  pdfCanvas.height = Math.floor(viewport.height);
-  pdfCanvas.style.width = viewport.width + "px";
-  pdfCanvas.style.height = viewport.height + "px";
+// ---- DPI FIX (migliora allineamento selezione) ----
+const dpr = window.devicePixelRatio || 1;
 
-  // Text layer size (match canvas exactly)
-  textLayerDiv.style.width = viewport.width + "px";
-  textLayerDiv.style.height = viewport.height + "px";
+// Canvas in device pixels (nitido e allineato)
+pdfCanvas.width  = Math.floor(viewport.width * dpr);
+pdfCanvas.height = Math.floor(viewport.height * dpr);
 
-  // Render canvas
-  await page.render({ canvasContext: pdfCtx, viewport }).promise;
+// Dimensioni CSS (viewport in CSS pixels)
+pdfCanvas.style.width  = viewport.width + "px";
+pdfCanvas.style.height = viewport.height + "px";
 
-  // Render text layer (accurate selection)
-  clearTextLayer();
-  const textContent = await page.getTextContent();
+// Compensa la scala DPI nel contesto
+pdfCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // pdf.js text layer renderer
-  await pdfjsLib.renderTextLayer({
-    textContent,
-    container: textLayerDiv,
-    viewport,
-    textDivs: []
-  }).promise;
+// Text layer in CSS pixels (stessa dimensione del viewport)
+textLayerDiv.style.width  = viewport.width + "px";
+textLayerDiv.style.height = viewport.height + "px";
+
+// Render canvas
+await page.render({ canvasContext: pdfCtx, viewport }).promise;
+
+// Render text layer (accurate selection)
+clearTextLayer();
+const textContent = await page.getTextContent();
+
+await pdfjsLib.renderTextLayer({
+  textContent,
+  container: textLayerDiv,
+  viewport,
+  textDivs: []
+}).promise;
 
   // Important: keep text layer aligned (no extra scaling)
   textLayerDiv.style.transform = "translateZ(0)";
@@ -815,5 +821,6 @@ btnSpeakContinue.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
 
