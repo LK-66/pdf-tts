@@ -6,7 +6,7 @@
   <title>PDF → Editor + Evidenzia/Sottolinea + TTS</title>
 
   <!-- PDF.js (jsDelivr - stabile su GitHub Pages) -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="./libs/pdf.min.js"></script>
 
   <style>
     :root{
@@ -351,8 +351,8 @@ let pdfDoc = null;
 let currentPage = 1;
 let scale = 1.0;
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "./libs/pdf.worker.min.js";
+
 
 function setStatus(msg){ statusEl.textContent = msg; }
 
@@ -745,6 +745,7 @@ btnSpeakContinue.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
 
 
